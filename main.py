@@ -66,6 +66,37 @@ def run_adb_once(serial: str, command_text: str) -> Dict[str, object]:
     }
 
 
+def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
+    """
+    Execute semicolon-separated commands sequentially for the given serial.
+    Stops on first failure and returns aggregated output.
+    """
+    steps = [step.strip() for step in command_text.split(";") if step.strip()]
+    if not steps:
+        return run_adb_once(serial, command_text)
+
+    combined_stdout: List[str] = []
+    combined_stderr: List[str] = []
+    last_code = 0
+
+    for step in steps:
+        res = run_adb_once(serial, step)
+        last_code = res.get("code", -1) or 0
+        if res.get("stdout"):
+            combined_stdout.append(str(res["stdout"]))
+        if res.get("stderr"):
+            combined_stderr.append(str(res["stderr"]))
+        if last_code != 0:
+            break
+
+    return {
+        "serial": serial,
+        "code": last_code,
+        "stdout": "\n".join(combined_stdout).strip(),
+        "stderr": "\n".join(combined_stderr).strip(),
+    }
+
+
 def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval: float = REPORT_INTERVAL_SEC) -> None:
     """
     Background thread that reports devices every `interval` seconds.
@@ -221,7 +252,7 @@ def start_command_printer(
         results: List[Dict[str, str]],
         results_lock: threading.Lock,
     ) -> None:
-        result = run_adb_once(serial, command_text)
+        result = run_adb_sequence(serial, command_text)
         with results_lock:
             results.append(result)
 
